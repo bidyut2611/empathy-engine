@@ -1,0 +1,24 @@
+# Virtual environment
+venv/
+.venv/
+
+# Generated audio output
+output/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# HuggingFace model cache
+.cache/
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/

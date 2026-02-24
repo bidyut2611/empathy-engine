@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Empathy Engine — Giving AI a Human Voice</title>
+    <meta name="description" content="A service that dynamically modulates vocal characteristics of synthesized speech based on detected emotion.">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="header">
+            <div class="logo">
+                <span class="logo-icon">🎭</span>
+                <div>
+                    <h1>The Empathy Engine</h1>
+                    <p class="tagline">Giving AI a Human Voice</p>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Input Section -->
+            <section class="input-section glass-card">
+                <h2>
+                    <span class="section-icon">✍️</span>
+                    Enter Your Text
+                </h2>
+                <textarea id="text-input" 
+                    placeholder="Type something with emotion... e.g. &quot;I'm so excited about this opportunity!&quot; or &quot;This situation is really frustrating.&quot;"
+                    rows="4"></textarea>
+                <div class="controls">
+                    <div class="engine-select">
+                        <label for="engine">TTS Engine:</label>
+                        <select id="engine">
+                            <option value="pyttsx3">pyttsx3 (Offline)</option>
+                            <option value="gtts">gTTS (Online)</option>
+                        </select>
+                    </div>
+                    <button id="speak-btn" onclick="synthesize()">
+                        <span class="btn-icon">🎤</span>
+                        <span class="btn-text">Speak with Emotion</span>
+                    </button>
+                </div>
+            </section>
+
+            <!-- Loading -->
+            <div id="loading" class="loading hidden">
+                <div class="spinner"></div>
+                <p>Analyzing emotion and generating speech...</p>
+            </div>
+
+            <!-- Results Section -->
+            <div id="results" class="results hidden">
+                <!-- Emotion Analysis -->
+                <section class="emotion-section glass-card">
+                    <h2>
+                        <span class="section-icon">🔍</span>
+                        Emotion Analysis
+                    </h2>
+                    <div class="emotion-header">
+                        <div class="emotion-badge" id="emotion-badge">
+                            <span class="emotion-emoji" id="emotion-emoji">😐</span>
+                            <span class="emotion-label" id="emotion-label">neutral</span>
+                        </div>
+                        <div class="intensity-display">
+                            <span class="intensity-title">Intensity</span>
+                            <div class="intensity-bar-container">
+                                <div class="intensity-bar" id="intensity-bar"></div>
+                            </div>
+                            <span class="intensity-value" id="intensity-value">0%</span>
+                        </div>
+                    </div>
+
+                    <!-- HF Scores Chart -->
+                    <div class="hf-scores" id="hf-scores"></div>
+
+                    <!-- VADER Scores -->
+                    <div class="vader-scores" id="vader-scores"></div>
+                </section>
+
+                <!-- Voice Parameters -->
+                <section class="voice-section glass-card">
+                    <h2>
+                        <span class="section-icon">🎤</span>
+                        Voice Modulation
+                    </h2>
+                    <div class="voice-params">
+                        <div class="param-card">
+                            <div class="param-icon">⏱️</div>
+                            <div class="param-label">Rate</div>
+                            <div class="param-value" id="param-rate">200 wpm</div>
+                            <div class="param-baseline">baseline: 200</div>
+                        </div>
+                        <div class="param-card">
+                            <div class="param-icon">🎵</div>
+                            <div class="param-label">Pitch</div>
+                            <div class="param-value" id="param-pitch">1.00×</div>
+                            <div class="param-baseline">baseline: 1.00×</div>
+                        </div>
+                        <div class="param-card">
+                            <div class="param-icon">🔊</div>
+                            <div class="param-label">Volume</div>
+                            <div class="param-value" id="param-volume">0.85</div>
+                            <div class="param-baseline">baseline: 0.85</div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Audio Player -->
+                <section class="audio-section glass-card">
+                    <h2>
+                        <span class="section-icon">🔊</span>
+                        Audio Output
+                    </h2>
+                    <audio id="audio-player" controls></audio>
+                    <div class="processing-time" id="processing-time"></div>
+                </section>
+            </div>
+        </main>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>The Empathy Engine &bull; Built with Python, VADER, HuggingFace Transformers, pyttsx3 &amp; Flask</p>
+        </footer>
+    </div>
+
+    <script>
+        const EMOTION_EMOJIS = {
+            joy: '😊', sadness: '😢', anger: '😠', surprise: '😲',
+            fear: '😨', disgust: '🤢', neutral: '😐',
+            inquisitive: '🤔', concerned: '😟', excited: '🤩', calm: '😌'
+        };
+
+        const EMOTION_COLORS = {
+            joy: '#4ade80', sadness: '#60a5fa', anger: '#f87171',
+            surprise: '#fbbf24', fear: '#c084fc', disgust: '#a78bfa',
+            neutral: '#94a3b8'
+        };
+
+        async function synthesize() {
+            const text = document.getElementById('text-input').value.trim();
+            if (!text) {
+                shakeElement(document.getElementById('text-input'));
+                return;
+            }
+
+            const engine = document.getElementById('engine').value;
+            const btn = document.getElementById('speak-btn');
+            const loading = document.getElementById('loading');
+            const results = document.getElementById('results');
+
+            // Show loading
+            btn.disabled = true;
+            btn.classList.add('loading-btn');
+            loading.classList.remove('hidden');
+            results.classList.add('hidden');
+
+            try {
+                const response = await fetch('/synthesize', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text, engine })
+                });
+
+                const data = await response.json();
+
+                if (data.error) {
+                    alert('Error: ' + data.error);
+                    return;
+                }
+
+                displayResults(data);
+            } catch (err) {
+                alert('Connection error: ' + err.message);
+            } finally {
+                btn.disabled = false;
+                btn.classList.remove('loading-btn');
+                loading.classList.add('hidden');
+            }
+        }
+
+        function displayResults(data) {
+            const results = document.getElementById('results');
+            results.classList.remove('hidden');
+
+            const emotion = data.emotion;
+            const voice = data.voice;
+            const color = EMOTION_COLORS[emotion.primary_emotion] || '#94a3b8';
+
+            // Emotion badge
+            document.getElementById('emotion-emoji').textContent = 
+                EMOTION_EMOJIS[emotion.primary_emotion] || '😐';
+            document.getElementById('emotion-label').textContent = 
+                emotion.primary_emotion.toUpperCase();
+            document.getElementById('emotion-badge').style.borderColor = color;
+            document.getElementById('emotion-badge').style.boxShadow = 
+                `0 0 20px ${color}40`;
+
+            // Intensity bar
+            const pct = Math.round(emotion.intensity * 100);
+            document.getElementById('intensity-bar').style.width = pct + '%';
+            document.getElementById('intensity-bar').style.background = 
+                `linear-gradient(90deg, ${color}80, ${color})`;
+            document.getElementById('intensity-value').textContent = pct + '%';
+
+            // HF Scores
+            const hfContainer = document.getElementById('hf-scores');
+            if (emotion.hf_scores && Object.keys(emotion.hf_scores).length > 0) {
+                let html = '<h3>Emotion Distribution</h3><div class="score-bars">';
+                const sorted = Object.entries(emotion.hf_scores)
+                    .sort((a, b) => b[1] - a[1]);
+                for (const [label, score] of sorted) {
+                    const pct = Math.round(score * 100);
+                    const barColor = EMOTION_COLORS[label] || '#64748b';
+                    const isTop = label === emotion.granular_label;
+                    html += `
+                        <div class="score-row ${isTop ? 'top-score' : ''}">
+                            <span class="score-label">${EMOTION_EMOJIS[label] || ''} ${label}</span>
+                            <div class="score-bar-bg">
+                                <div class="score-bar-fill" style="width:${pct}%;background:${barColor}"></div>
+                            </div>
+                            <span class="score-pct">${pct}%</span>
+                        </div>`;
+                }
+                html += '</div>';
+                hfContainer.innerHTML = html;
+                hfContainer.classList.remove('hidden');
+            } else {
+                hfContainer.classList.add('hidden');
+            }
+
+            // VADER Scores
+            const vaderContainer = document.getElementById('vader-scores');
+            if (emotion.vader_scores) {
+                const v = emotion.vader_scores;
+                vaderContainer.innerHTML = `
+                    <h3>VADER Sentiment</h3>
+                    <div class="vader-chips">
+                        <span class="vader-chip" style="border-color:#4ade80">Positive: ${(v.pos * 100).toFixed(1)}%</span>
+                        <span class="vader-chip" style="border-color:#f87171">Negative: ${(v.neg * 100).toFixed(1)}%</span>
+                        <span class="vader-chip" style="border-color:#94a3b8">Neutral: ${(v.neu * 100).toFixed(1)}%</span>
+                        <span class="vader-chip compound" style="border-color:#fbbf24">
+                            Compound: ${v.compound >= 0 ? '+' : ''}${v.compound.toFixed(3)}
+                        </span>
+                    </div>`;
+            }
+
+            // Voice parameters
+            document.getElementById('param-rate').textContent = voice.rate + ' wpm';
+            document.getElementById('param-pitch').textContent = voice.pitch.toFixed(2) + '×';
+            document.getElementById('param-volume').textContent = voice.volume.toFixed(2);
+
+            // Highlight changes from baseline
+            highlightParam('param-rate', voice.rate, 200);
+            highlightParam('param-pitch', voice.pitch, 1.0);
+            highlightParam('param-volume', voice.volume, 0.85);
+
+            // Audio player
+            const player = document.getElementById('audio-player');
+            player.src = data.audio_url;
+            player.load();
+
+            // Processing time
+            document.getElementById('processing-time').textContent = 
+                `Processed in ${data.time_ms.toFixed(0)} ms`;
+
+            // Scroll to results
+            results.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        function highlightParam(id, value, baseline) {
+            const el = document.getElementById(id);
+            if (value > baseline * 1.02) {
+                el.classList.add('param-up');
+                el.classList.remove('param-down');
+            } else if (value < baseline * 0.98) {
+                el.classList.add('param-down');
+                el.classList.remove('param-up');
+            } else {
+                el.classList.remove('param-up', 'param-down');
+            }
+        }
+
+        function shakeElement(el) {
+            el.classList.add('shake');
+            setTimeout(() => el.classList.remove('shake'), 600);
+        }
+
+        // Enter key to submit
+        document.getElementById('text-input').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                synthesize();
+            }
+        });
+    </script>
+</body>
+</html>

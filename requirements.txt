@@ -1,0 +1,16 @@
+# Emotion Detection
+nltk>=3.8
+vaderSentiment>=3.3.2
+transformers>=4.30.0
+torch>=2.0.0
+
+# Text-to-Speech
+pyttsx3>=2.90
+gTTS>=2.3.0
+pydub>=0.25.1
+
+# Web Interface
+flask>=3.0.0
+
+# Utilities
+numpy>=1.24.0
